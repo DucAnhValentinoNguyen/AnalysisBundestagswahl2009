@@ -1,0 +1,121 @@
+---
+title: "AnalysisBundeswahl2009"
+author: "Duc-Anh Nguyen"
+date: "2025-02-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read the dataset and check its features
+```{r dataset}
+wahl <- read.table("Wahl.txt",header = TRUE)
+head(wahl)
+skimr::skim(wahl)
+```
+
+## fit a logit model with all combinations of interactions, as there are 10 independent variables we will have
+```{r }
+# fit a logit-model with interactions
+logit_interaction_model <- glm(WA~.*., family = binomial(), data = wahl)
+summary(logit_interaction_model)
+```
+Not many stat. significant effects. I want to check for colinearity now.
+
+
+## check for colinearity
+We check for colinearity by checking for singularity in the design matrix
+```{r }
+X <- model.matrix(logit_interaction_model)
+Matrix::rankMatrix(X)
+dim(X)
+```
+
+We see that there are 56 columns but the rank is only 53, which means there are two effects that are having colinearity. Let us then do variables selection with BIC
+```{r }
+logit_BIC_model <- MASS::stepAIC(object = logit_interaction_model, direction = "both", k = log(nrow(wahl)), trace = FALSE)
+summary(logit_BIC_model)
+```
+There are only 7 main effects and 2 interaction effects left, one for sex:living(west or east) and one for age:religion(not catholic). 
+
+For main effects: age, being catholic, and following other religions are having a negative correlation with decision of voting for SPD instead of CCU. 
+
+The interaction of sex:living in the west and age:being religious are showing negative effects on the chance of voting for SPD instead of CCU
+
+
+Now we will consider the non-linear effect of Alter_z (age). We fit the age effect and the interaction of age:sex now non-linearly with P-splines with max. number of nodes of k = 30
+```{r }
+logit_GAM_model <- mgcv::gam(formula = WA~s(Alter_z, bs = "ps", k = 30) + s(Alter_z, bs = "ps", k = 30, by = Geschlecht) + Geschlecht + West + Gewerk + Demozufrieden + Religion_kath  + Geschlecht*West, family = binomial(), data = wahl)
+
+summary(logit_GAM_model)
+
+# visualising the P-splines
+par(mfrow = c(2,1))
+plot(x = logit_GAM_model, shade = TRUE, select = 1, cex.main = 0.8, cex = 0.8, cex.lab = 0.8, cex.axis = 0.8, main = "Glatter Effekt des Alters für Frauen")
+plot(x = logit_GAM_model, shade = TRUE, select = 2, cex.main = 0.8, cex = 0.8, cex.lab = 0.8, cex.axis = 0.8, main = "Glatter Effekt des Alters für Männer")
+```
+Attention: Although the lower graphic shows a linear effect for male voters, we need to add the effect of both plots in order to interpret the varying effect for males while simutaniously considering effect of age 
+
+
+# Now for evaluation with ROC
+```{r }
+library(tidyverse)
+library(ggplot2)
+# Logit-Model:
+wahl$BIC_predict <-
+  predict(object = logit_BIC_model, type = "response")
+
+# plot1 <-
+#   ggplot(mapping = aes(m = BIC_predict, d = WA), data = wahl) + geom_roc() + geom_abline(intercept = 0, slope = 1) + ylab("Sensitivität") + xlab("1- Spezifität") + theme + ggtitle("Logit-Modell")
+
+wahl$GAM_predict <-
+  predict(object = logit_GAM_model, type = "response")
+
+# plot2 <-
+#   ggplot(mapping = aes(m = GAM_predict, d = WA), data = wahl) +
+#   geom_roc(n.cuts = 0) + geom_abline(intercept = 0, slope = 1) +
+#   ylab("Sensitivität") + xlab("1- Spezifität") + theme +
+#   ggtitle("Logit-GAM")
+
+ # Gemeinsame Visualisierung
+# grid.arrange(plot1, plot2, ncol = 2)
+```
+
+
+getting the AUC
+```{r }
+library(pROC)
+# logit_model
+auc_logit_BIC <- roc(response = as.factor(wahl$WA), predictor = wahl$BIC_predict)$auc
+auc_logit_GAM <- roc(response = as.factor(wahl$WA), predictor = wahl$GAM_predict)$auc
+
+auc_logit_BIC
+auc_logit_GAM
+```
+# now let us try to predict the chance of:
++ an catholic woman in her 25 in union from east germany, who is satisfied with democracy system in germany choosing SPD
++ a jewish man in his 75 not in union from west germany, who is not satisfied with democracy system 
+
+```{r }
+
+
+newdata <-
+  data.frame(
+    Alter_z = c(-25.5, 24.5),
+    Geschlecht = c(0, 1),
+    West = c(0, 1),
+    Gewerk = c(1, 0),
+    Demozufrieden = c(1, 0),
+    Religion_kath = c(1, 0),
+    Religion_Rest = c(0, 1)
+  )
+newdata 
+
+# glm
+predict(object = logit_BIC_model, newdata = newdata, type = "response")
+# gam
+mgcv::predict.gam(object = logit_GAM_model, newdata = newdata, type = "response")
+```
+
