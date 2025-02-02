@@ -9,14 +9,14 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Read the dataset and check its features
+Read the dataset and check its features
 ```{r dataset}
 wahl <- read.table("Wahl.txt",header = TRUE)
 head(wahl)
 skimr::skim(wahl)
 ```
 
-## fit a logit model with all combinations of interactions, as there are 10 independent variables we will have
+Fit a logit model with all combinations of interactions, as there are 10 independent variables we will have
 ```{r }
 # fit a logit-model with interactions
 logit_interaction_model <- glm(WA~.*., family = binomial(), data = wahl)
@@ -25,7 +25,7 @@ summary(logit_interaction_model)
 Not many stat. significant effects. I want to check for colinearity now.
 
 
-## check for colinearity
+## Check for colinearity
 We check for colinearity by checking for singularity in the design matrix
 ```{r }
 X <- model.matrix(logit_interaction_model)
@@ -59,28 +59,34 @@ plot(x = logit_GAM_model, shade = TRUE, select = 2, cex.main = 0.8, cex = 0.8, c
 Attention: Although the lower graphic shows a linear effect for male voters, we need to add the effect of both plots in order to interpret the varying effect for males while simutaniously considering effect of age 
 
 
-# Now for evaluation with ROC
+## Evaluation with ROC
 ```{r }
 library(tidyverse)
 library(ggplot2)
+# install.packages("plotROC")  # Install (if not installed)
+library(plotROC)  # Load the package
+# install.packages("gridExtra")  # Install the package (if not installed)
+library(gridExtra)  # Load the package
+
+
 # Logit-Model:
 wahl$BIC_predict <-
   predict(object = logit_BIC_model, type = "response")
 
-# plot1 <-
-#   ggplot(mapping = aes(m = BIC_predict, d = WA), data = wahl) + geom_roc() + geom_abline(intercept = 0, slope = 1) + ylab("Sensitivität") + xlab("1- Spezifität") + theme + ggtitle("Logit-Modell")
+plot1 <-
+  ggplot(mapping = aes(m = BIC_predict, d = WA), data = wahl) + geom_roc(n.cuts = 0) + geom_abline(intercept = 0, slope = 1) + ylab("Sensitivität") + xlab("1- Spezifität") + theme() + ggtitle("Logit-Modell")
 
 wahl$GAM_predict <-
   predict(object = logit_GAM_model, type = "response")
 
-# plot2 <-
-#   ggplot(mapping = aes(m = GAM_predict, d = WA), data = wahl) +
-#   geom_roc(n.cuts = 0) + geom_abline(intercept = 0, slope = 1) +
-#   ylab("Sensitivität") + xlab("1- Spezifität") + theme +
-#   ggtitle("Logit-GAM")
+plot2 <-
+  ggplot(mapping = aes(m = GAM_predict, d = WA), data = wahl) +
+  geom_roc(n.cuts = 0) + geom_abline(intercept = 0, slope = 1) +
+  ylab("Sensitivität") + xlab("1- Spezifität") + theme() +
+  ggtitle("Logit-GAM")
 
- # Gemeinsame Visualisierung
-# grid.arrange(plot1, plot2, ncol = 2)
+# Gemeinsame Visualisierung
+grid.arrange(plot1, plot2, ncol = 2)
 ```
 
 
@@ -94,7 +100,10 @@ auc_logit_GAM <- roc(response = as.factor(wahl$WA), predictor = wahl$GAM_predict
 auc_logit_BIC
 auc_logit_GAM
 ```
-# now let us try to predict the chance of:
+does not make much of a different w.r.t. AUC
+
+## Prediction:
+now let us try to predict the chance of:
 + an catholic woman in her 25 in union from east germany, who is satisfied with democracy system in germany choosing SPD
 + a jewish man in his 75 not in union from west germany, who is not satisfied with democracy system 
 
@@ -118,4 +127,5 @@ predict(object = logit_BIC_model, newdata = newdata, type = "response")
 # gam
 mgcv::predict.gam(object = logit_GAM_model, newdata = newdata, type = "response")
 ```
+Inspite of the almost identical performance w.r.t. AUC, the predictions make quite a different (20 more % with glm model)
 
